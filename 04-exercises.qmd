@@ -20,8 +20,9 @@ Please fill the empty chunks below with your own answers. When you do this, plea
 Before beginning, create two objects `wdir` and `ddir` with the absolute paths to your working and data directories, respectively.
 
 ```{r}
-# your code goes here
-```
+# wdir <- "-/LSE-MY472-AT25/SEminar041"
+ddir <- file.path (wdir, "data")
+
 
 ## Exercise 1: Visualising 2024 UK election results
 
