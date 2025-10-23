@@ -1,0 +1,108 @@
+---
+title: "Seminar 4 Exercises"
+subtitle: "LSE MY472: Data for Data Scientists"
+date-modified: "21 October 2025"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    mathjax: true
+execute:
+  echo: true
+  eval: false
+---
+
+Please fill the empty chunks below with your own answers. When you do this, please *remove* the comment saying `# your code goes here` (or any similar message). **Please push your final version to GitHub Classroom before next Wednesday at 5 pm London time.**
+
+### Directory management
+
+Before beginning, create two objects `wdir` and `ddir` with the absolute paths to your working and data directories, respectively.
+
+```{r}
+# your code goes here
+```
+
+## Exercise 1: Visualising 2024 UK election results
+
+Full election results for the 2024 UK election are available at the following URL:
+
+<https://researchbriefings.files.parliament.uk/documents/CBP-10009/HoC-GE2024-results-by-candidate.csv>
+
+In the next code chunk, download the file at this URL into your `ddir` folder, and name the file using the same name it has in the URL above.
+
+::: callout-warning
+If you are attempting to download and get an error, it could be because the server is blocking some traffic. Wait and try again later, or manually download it by going to the link in your web browser and moving the downloaded file into the correct folder. You might also need to update the link if this website moved files around. (Note: it worked for Ryan Hübert on 21st October 2025.)
+:::
+
+```{r}
+# your code goes here
+```
+
+Now, load the data as a tibble called `rf` and print the first six lines to see how it looks.
+
+```{r}
+# your code goes here
+```
+
+Notice that `rf` has a row for every *candidate* in each constituency in the election. Using data wrangling tools from last week, create a new table `wf` that contains the constituency ID number (`ONS_ID`), the constituency name (`constituency`), the winning candidate's last name (`winner_lname`), and the winning candidate's party (`winner_party`).
+
+```{r}
+# your code goes here
+```
+
+Using the `wf` dataset, calculate how many seats each party won in the 2024 election and display this in a table sorted in descending order of number of seats.
+
+```{r}
+# your code goes here
+```
+
+The UK government makes available datasets for plotting all sorts of spatial data. The 2024 parliamentary constituencies can be found [here](https://geoportal.statistics.gov.uk/datasets/ons::westminster-parliamentary-constituencies-july-2024-boundaries-uk-bsc-2/about). You can directly download the dataset using the following URL:
+
+<https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Westminster_Parliamentary_Constituencies_July_2024_Boundaries_UK_BSC/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson>
+
+In the next code chunk, download the file at this URL into your `ddir` folder, and call the file `mp_const.geojson`.
+
+```{r}
+# your code goes here
+```
+
+Read the `.geojson` file into R using `read_sf()` and plot the mapping data it contains using `{ggplot2}`.
+
+```{r}
+# your code goes here
+```
+
+Join the `wf` dataset and the map dataset into a new tibble called `df`.
+
+```{r}
+# your code goes here
+```
+
+As you probably know, the Labour party won the 2024 election because it won in the highest most number of constituencies. Let's create some maps depicting the results of the election.
+
+Now, create a map that colour-codes each constituency based on which party won that constituency. For this map you should use these colours: red for Labour (including "Labour and Co-operative"), blue for Conservative, orange for Liberal Democrat, yellow for Scottish National Party and pink for others.
+
+```{r}
+# your code goes here
+```
+
+Compare your map to here: <https://en.wikipedia.org/wiki/2024_United_Kingdom_general_election>. Does it look right?
+
+## Exercise 2: Visualising unemployment in the US
+
+![](unemployment.png)
+
+Using `{ggplot2}` and the dataset `unemployment.csv`, try to to replicate the line chart above, which displays the evolution in the unemployment rate in the US over time. The main challenge here consists of overlaying a set of shaded boxes in red or blue, depending on the party to which the president in power at the time belongs. To help with that part, you can use the following dataset that contains data on when various presidents' terms started and ended (and their party).
+
+```{r}
+# your code goes here
+```
+
+::: {.callout-note}
+This is an open ended exercise where your goal is to build a plot that looks as close to the one above as possible. You should consult lecture and seminar materials, the `{ggplot2}` documents and even generative AI for help writing lines of code.
+:::
+
+```{r}
+# your code goes here
+```

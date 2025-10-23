@@ -1,0 +1,277 @@
+---
+title: "Seminar 4.2: A `{ggplot2}` Example"
+subtitle: "LSE MY472: Data for Data Scientists"
+date-modified: "22 October 2025" 
+date-format: "D MMMM YYYY"
+toc: true
+format:
+  html:
+    embed-resources: true
+    toc: true
+    mathjax: true
+execute:
+  echo: true
+  eval: false
+---
+
+In this notebook, you will be working with a random sample of 10,000 public Facebook posts by members of the US Congress. You will use this data to examine the distribution of likes on the Facebook posts in this dataset. In the next notebook, you will use this same dataset to explore a wide range of visualisations, demonstrating the range of the `{ggplot2}` package.
+
+## Set up
+
+### Load (and install) required packages
+
+```{r}
+# install.packages("scales") # if needed
+library("tidyverse") # load tidyverse packages
+library("scales")
+```
+
+### Directory management
+
+Define your working and data directories as in the previous notebook. If you have not completed the set up steps in the first notebook for this seminar, you must do so now.
+
+```{r}
+## Use this code if you have a Unix-like operating system (macOS or Linux)
+wdir <- "~/LSE-MY472-AT25/Seminar04"
+## Use this code if you use Windows 
+# Sys.setenv(R_USER = "C:/Users/HUBERTR") # Windows: tell R my home folder (replace with your user name)
+# wdir <- file.path(Sys.getenv("R_USER"), "LSE-MY472-AT25", "Seminar04") # Windows: specify directory
+
+## Specify the data directory
+ddir <- file.path(wdir, "data") # a "data" subdirectory
+```
+
+Now, check if you have the required files in this directory. They should be included in your GitHub Classroom repo for Seminar 4. If not, please double check you have cloned everything correctly.
+
+```{r}
+# File we need for this notebook
+fb.file <- file.path(ddir, "fb-congress-data.csv")
+
+# Check file exists, and if not, return an error message
+if(!file.exists(fb.file)){
+  stop("The dataset of Facebook posts is missing!")
+}
+```
+
+## Introduction
+
+We begin by reading in the data and some initial processing. We will read the data directly into R as a tibble using `read_csv()` from the `{readr}` package (loaded with `{tidyverse}`).
+
+::: {.callout-tip}
+Note that `read_csv()` will try to anticipate each column's type: reading seemingly numeric columns as `dbl` or `int`, date characters as `date`, etc. There are situations where you are importing raw data and you **do not** want R to automatically reformat variables, in which case you include the option `col_types = cols(.default = col_character())` in `read_csv`. This will import all variables as text just as they are stored in the plain text `.csv` file.
+:::
+
+```{r}
+# Import using readr from tidyverse 
+df <- read_csv(fb.file) # recall: returns a tibble
+
+# Quickly look at the data (always good practice!)
+head(df) # Could also run View(df)
+
+# Dropping some very uncommon post types and tidying the gender and type labels
+print(nrow(df)) # How many rows did we start with?
+df <- df |> 
+  filter(!post_type %in% c("music", "note")) |>  
+  mutate(gender = if_else(gender == "M", "Man", "Woman"), 
+         type = if_else(type == "rep","House","Senate"))
+print(nrow(df))  # How many rows did we end with?
+```
+
+## Number of likes 
+
+Let's consider a case where we wanted to understand how much engagement Members of Congress are getting on their posts. This is a _univariate_ analysis, since we are concerned with the distribution of a single variable. 
+
+We can begin by looking at some simple summary statistics; i.e., summarising the `likes_count` variable.
+
+```{r}
+## "Standard" summary statistics 
+df |>  
+  summarise(min = min(likes_count), 
+            mean = mean(likes_count), 
+            median = median(likes_count),
+            max = max(likes_count), 
+            n = n())
+
+## What percentage of posts got zero likes?
+df |>  
+  mutate(zero_likes = if_else(likes_count==0,1,0)) |> 
+  summarize(zero_likes_percent = mean(zero_likes) * 100)
+```
+
+But we can view _more_ information about this variable if we plot it as a histogram. Here we will use `{ggplot2}` (loaded with `{tidyverse}`) in order to (1) create a `ggplot` object, and (2) add a histogram layer. Every time we add a component to a specific graphic in `{ggplot2}`, we _add_ it (using `+`).
+
+Note: below we do not specify a lot of details about what we want to see from our histogram, so `ggplot` will choose "sensible" defaults for us. Note also: datasets and mappings you specify when you initialise the plot will automatically be used for all additional layers unless you say otherwise.
+
+```{r}
+## Initialise a plot and assign it the name `likes_plot`
+likes_plot <- ggplot(data = df, mapping = aes(x = likes_count)) 
+## Note: it is conventional for people to omit `data = ` and `mapping = `
+##       since ggplot will undersand df is your data and aes(.) is your mapping
+
+## You can also do this with piping syntax
+likes_plot <- df |> 
+  ggplot(mapping = aes(x = likes_count)) 
+
+## Add a histogram layer
+likes_hist <- likes_plot + 
+  geom_histogram()
+```
+
+When you run this code, `{ggplot2}` is warning us that it is using its default binning rule (create 30 bins). 
+
+::: {.callout-important}
+You should always read and try to deal with non-fatal warnings! It is not usually good practice to leave errors and warnings unresolved in your scripts. 
+:::
+
+If we want to silence these warnings, we simply indicate that we _intend_ to use 30 bins.
+
+```{r}
+likes_hist <- likes_plot + 
+  geom_histogram(bins = 30)
+```
+
+Now, see what it looks like:
+
+```{r}
+likes_hist
+```
+
+It is important to keep in mind that layers will implicitly inherit the arguments you specify when you initialise a `ggplot()` object. Another way to create the plot above is to create an _empty_ plot object and then specify the relevant arguments in the layer. For example:
+
+```{r}
+## Initialise a plot and assign it the name `likes_plot`
+likes_plot <- ggplot() 
+likes_hist <- likes_plot + 
+  geom_histogram(data = df, mapping = aes(x = likes_count))
+likes_hist
+```
+
+This is a pretty rubbish graph! The problem we have is that most posts have limited engagement, but some tweets have _huge_ levels of engagement, which results in a sparse (and relatively uninformative) visual.
+
+As part of the grammar of graphics, however, we can define the _scales_ we use to translate variables to visuals. So, rather than show a linear, continuous scale on the x-axis, we can instead "log" the space to bring extreme values closer to smaller ones *visually*:
+
+```{r}
+likes_hist + 
+  scale_x_log10()
+```
+
+::: {.callout-tip}
+For a review of the log scale, see this [video](https://www.youtube.com/watch?v=sBhEi4L91Sg).
+:::
+
+Now, we are getting another warning indicating that the log transformation caused some values to be dropped. This occurs because $\log(0)$ is not defined. We will silence this warning by removing any row in our dataset where `likes_count` equals zero. Moreover, from a presentation perspective, we should really tidy up the axes and theme.
+
+``` {r}
+likes_hist <- df |>  
+  filter(likes_count > 0) |>  # resolve warning: can't log transform zeroes 
+  ggplot(aes(x = likes_count)) + 
+  geom_histogram(bins=30) + # resolve previous warning: just use ggplot default
+  scale_x_log10(labels = comma) + # rather than use scientific notation, use commas
+  labs(x = "Likes", y = "No. of posts") + # change the axis labels
+  theme_minimal() # a nice starting point for customising the theme
+```
+
+Maybe we would like to add the mean and median on this plot in a new layer?
+
+``` {r}
+likes_hist + 
+  geom_vline(xintercept = mean(df$likes_count), colour = "blue", linewidth=1.5) + 
+  annotate("text", x = mean(df$likes_count)-100, y = 1200, label = "mean", angle=90, size=5, colour="blue") + 
+  geom_vline(xintercept = median(df$likes_count), colour = "red", linewidth=1.5) + 
+  annotate("text", x = median(df$likes_count)-16, y = 300, label = "median", angle=90, size=5, colour="red")
+```
+
+Great! But what if we wanted to distinguish Republicans and Democrats? We need a new aesthetic to distinguish between these two (categorical) groups. An intuitive aesthetic choice would be the colour **fill** (as distinguished from **colour**, which is just the outline of the shape):
+
+```{r}
+party_likes <- df |> 
+  filter(likes_count > 0) |> 
+  ggplot(mapping = aes(x = likes_count, fill = party))
+
+party_likes +
+  geom_histogram(bins = 30) +
+  scale_x_log10(labels = comma) + 
+  labs(x = "Likes", y = "No. of posts", fill = "Political Party") + # note we change the legend title
+  theme_minimal() 
+```
+
+Not bad, but notice the default colour scheme assigns the red colour to Democrats and the blue colour to Republicans, which is the opposite to what is used by the two parties! (This isn't some mind-game by `{ggplot2}`, it's just the fact that their default scheme is red-green-blue, and the colours are assigned to factor levels in alphabetical order.) We can fix this by manually defining the `fill` scale:
+
+```{r}
+party_likes +
+  geom_histogram(bins = 30) +
+  scale_x_log10(labels = comma) + 
+  scale_fill_manual(breaks = c("Democrat","Republican","Independent"),
+                    values = c("dodgerblue","firebrick","purple")) +
+  labs(x = "Likes", y = "No. of posts", fill = "Political Party") + 
+  theme_minimal() 
+```
+
+Sometimes, we might prefer to represent the distribution in a continuous way rather than using discrete bins. So we can substitute the histogram for a **density** geom. The problem here (and often with histograms too) is that the fill of the shapes means overlapping areas are hidden. We can tackle this by making our density plots slightly transparent, using the `alpha = ` argument of the geom:
+
+```{r}
+party_likes +
+  geom_density(alpha = 0.7) + # alpha = 0 means fully transparent, and alpha = 1 means opaque
+  scale_x_log10(labels = comma) + 
+  scale_fill_manual(breaks = c("Democrat","Republican","Independent"),
+                    values = c("dodgerblue","firebrick","purple")) +
+  labs(x = "Likes", y = "Density", fill = "Political Party") + # y is not a count anymore
+  theme_minimal() 
+```
+
+Notice that this isn't just changing the shape: the height of the distributions are now different compared to the histogram, because we are calculating the density **within each group** rather than the absolute number of posts.
+
+Suppose we now wanted to see these distributions by gender as well. We've already used the fill aesthetic to map party. As a naive example, why don't we map gender to the colour attribute:
+
+```{r}
+pty_gndr_likes <- df |> 
+  filter(likes_count > 0) |> 
+  ggplot(aes(x = likes_count, fill = party, colour = gender))
+
+pty_gndr_likes + 
+  geom_density(alpha = 0.7) + # alpha = 0 means fully transparent, and alpha = 1 means opaque
+  scale_x_log10(labels = comma) + 
+  scale_fill_manual(breaks = c("Democrat","Republican","Independent"),
+                    values = c("dodgerblue","firebrick","purple")) +
+  labs(x = "Likes", y = "Density", fill = "Political Party") + # y is not a count anymore
+  theme_minimal() 
+```
+
+Now that's confusing! What would be better is if we could separate the male and female plots into separate panes or **facets**. To do this, we perform a special form of mapping where some variable is used to define subsets of the data we should generate the same _form_ of visual for. In `{ggplot2}`, we simply use `facet_wrap()`:
+
+```{r}
+party_likes + # note we're reusing the old mapping without gender
+  facet_wrap("gender") + # we specify the "facetting" variable
+  geom_density(alpha = 0.7) + 
+  scale_x_log10(labels = comma) + 
+  scale_fill_manual(breaks = c("Democrat","Republican","Independent"),
+                    values = c("dodgerblue","firebrick","purple")) +
+  labs(x = "Likes", y = "Density", fill = "Political Party") +
+  theme_minimal() 
+```
+
+If we want to subset the plots by two variables, we can use `facet_grid()` instead. This allows us to specify a matrix of plots, where we map variables explicitly to the rows and columns of the plot space:
+
+```{r}
+party_likes + 
+  facet_grid("gender~type") + # row~column
+  geom_density(alpha = 0.7) + 
+  scale_x_log10(labels = comma) + 
+  scale_fill_manual(breaks = c("Democrat","Republican","Independent"),
+                    values = c("dodgerblue","firebrick","purple")) +
+  labs(x = "Likes", y = "Density", fill = "Political Party") +
+  theme_minimal() 
+```
+
+Finally, we may want to save a plot. There are many ways to do this, but let's use the out-of-the-box saving function in `{ggplot2}`, which is called `ggsave()`. 
+
+```{r}
+ggsave(filename = "my_pretty_plot.png", 
+       plot = last_plot(), # save the last plot made, or a specific plot you assigned a name?
+       path = wdir, # where to save? if you don't specify anything, will save in current folder
+       width = 15, # for printing, think about the paper size
+       height = 8, # for printing, think about the paper size
+       units = "cm", # units used for width/height
+       dpi = 300, # resolution: use 300 for printing, 72 for screen
+       bg = "white") # don't need this unless you use theme_minimal()
+```

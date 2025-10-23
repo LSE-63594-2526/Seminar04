@@ -1,0 +1,462 @@
+---
+title: "Seminar 4.3: Full Tour through `{ggplot2}`"
+subtitle: "LSE MY472: Data for Data Scientists"
+date-modified: "22 October 2025" 
+date-format: "D MMMM YYYY"
+toc: true
+format:
+  html:
+    embed-resources: true
+    toc: true
+    mathjax: true
+execute:
+  echo: true
+  eval: false
+---
+
+In this notebook, you will again be working with a random sample of 10,000 public Facebook posts by members of the US Congress. You will use this data to explore a wide range of visualisations, demonstrating the range of the `{ggplot2}` package.
+
+## Set up
+
+### Load (and install) required packages
+
+```{r}
+# install.packages("gridExtra") ## if needed
+library("tidyverse") # load tidyverse packages
+library("scales")
+library("gridExtra") # used in the last chunk
+```
+
+### Directory management
+
+Define your working and data directories as in the previous notebook. If you have not completed the set up steps in the first notebook for this seminar, you must do so now.
+
+```{r}
+## Use this code if you have a Unix-like operating system (macOS or Linux)
+wdir <- "~/LSE-MY472-AT25/Seminar04"
+## Use this code if you use Windows 
+# Sys.setenv(R_USER = "C:/Users/HUBERTR") # Windows: tell R my home folder (replace with your user name)
+# wdir <- file.path(Sys.getenv("R_USER"), "LSE-MY472-AT25", "Seminar04") # Windows: specify directory
+
+## Specify the data directory
+ddir <- file.path(wdir, "data") # a "data" subdirectory
+```
+
+Now, check if you have the required files in this directory. They should be included in your GitHub Classroom repo for Seminar 4. If not, please double check you have cloned everything correctly.
+
+```{r}
+# File we need for this notebook
+fb.file <- file.path(ddir, "fb-congress-data.csv")
+
+# Check file exists, and if not, return an error message
+if(!file.exists(fb.file)){
+  stop("The dataset of Facebook posts is missing!")
+}
+```
+
+## Examples of `{ggplot2}` plots
+
+In this section, we show a range of possible plots you can create with `{ggplot2}`. First, read in the data and do some initial processing (as we did in the last notebook).
+
+```{r}
+df <- read_csv(fb.file)
+
+# Transform date column to datetime
+df$date <- as_date(df$date)
+
+# Dropping some very uncommon post types
+nrow(df)
+df <- df |>
+  filter(!post_type %in% c("music", "note")) |>
+  filter(likes_count > 0 & comments_count > 0) # because we'll do log transformations below   
+nrow(df)
+```
+
+### First (time series) plots
+
+After creating a base layer, `geom_line()` can be used for line plots such as time series. Plotting daily posts over time:
+
+```{r}
+counts <- df |>
+  group_by(date) |> 
+  summarise(posts = n())
+
+# Base layer
+p <- ggplot(data = counts, mapping = aes(x = date, y = posts))  
+# 'data = ...' and 'mapping = ...' are often omitted
+
+# Line plot of the posts per day
+p + geom_line()
+```
+
+Note: Aesthetic mappings `aes` describe which columns/variables in the data are mapped to which variables/features in the plot. Thus, in `aes` we list parts of the data that shall be used in the plot. If we instead want to set plot features like e.g. the size of points in a scatter plot, colours which do not depend on the data, etc., then these would be set outside of an aesthetic mapping.
+
+Two separate time series by party, now also aggregated to monthly:
+
+```{r}
+# Obtain a new data frame with monthly counts of posts per party
+counts <- df |>
+  filter(party != "Independent") |> 
+  group_by(month = ceiling_date(date, "month"), party) |> 
+  summarise(posts = n())
+
+p <- ggplot(counts, aes(x = month, 
+                        y = posts, group = party))
+p + geom_line(aes(color = party)) + # (additional) aesthetic mapping here layer specific rather than global via ggplot()
+  scale_color_manual(values=c("blue", "red"))
+```
+
+### Univariate analysis for a single continuous variable
+
+```{r}
+# Base layer
+p <- ggplot(df, aes(x=likes_count))
+
+# Histogram
+p + geom_histogram()
+
+# Smoothed density estimate
+p + geom_density() + scale_x_continuous("likes count", labels = comma)
+
+# The same log scale (note: the labels = comma option prevents scientific
+# notation of numbers as 1e+00, 1e+01 and uses the `scales` package)
+p + geom_histogram() + scale_x_log10("likes count", labels = comma)
+p + geom_density() + scale_x_log10("likes count", labels = comma)
+
+# Why does this line of code drops some observations?
+```
+
+### Univariate analysis for a single categorical variable
+
+```{r}
+p <- ggplot(df, aes(x=post_type)) + xlab("post type")
+
+# Bar chart
+p + geom_bar() ## number of posts by type
+
+# Bar chart (horizontal)
+p + geom_bar() + coord_flip()
+```
+
+### Bivariate analysis for two continuous variables
+
+```{r}
+# Base layer
+p <- ggplot(df, aes(x = likes_count, y = comments_count)) + xlab("Likes count") +
+  ylab("Comments count")
+
+# Scatter plot: Relationship between number of likes and number of comments
+p + geom_point()  
+
+# With smoothed conditional means
+p + geom_point() + stat_smooth(na.rm = TRUE) 
+
+# With restricted axes
+p + geom_point() + xlim(0, 25000) + ylim(0, 2500)
+
+# Particularities of integer variables in scatter plots
+p + geom_point() + xlim(0, 10) + ylim(0, 10)
+  
+# With log scales
+p + geom_point() + scale_x_log10(labels = comma) + scale_y_log10(labels = comma) 
+p + geom_point() + scale_x_log10(labels = comma) + scale_y_log10(labels = comma) + 
+    stat_smooth()
+```
+
+### Bivariate analysis for one continuous variable and one categorical variable
+
+```{r}
+# Number of likes by type of post as a box blot
+p <- ggplot(df, aes(x = post_type, y = likes_count)) + xlab("Post type") +
+  ylab("Likes count")
+p + geom_boxplot()
+
+# Box plot and violin plot with log scale
+p + geom_boxplot() + scale_y_log10(labels = comma)
+p + geom_violin() + scale_y_log10(labels = comma)
+
+# Density plot for log like distributions for different parties
+p <- ggplot(df, aes(x = likes_count))
+p + geom_density(aes(color = party)) + scale_x_log10("likes count", labels = comma)
+```
+
+### Bivariate analysis for two categorical variables
+
+```{r}
+counts <- df |>
+  filter(party != "Independent") |> 
+  group_by(post_type, party) |> 
+  summarise(posts = n())
+
+p <- ggplot(counts, aes(x = party, y = post_type)) + ylab("post type")
+p + geom_tile(aes(fill = posts))
+
+```
+
+### Multivariate analysis for three continuous variables
+
+```{r}
+p <- ggplot(df, aes(x = likes_count, y = comments_count, color = log(angry_count))) +
+  xlab("Likes count") + ylab("Comments count")
+
+p + geom_point()
+
+p + geom_point() + scale_y_log10(labels = comma) + scale_x_log10(labels = comma) + 
+ stat_smooth(method = "lm")
+```
+
+### Multivariate analysis for two continuous variables and one categorical variable
+
+```{r}
+# Grid of plots: 2x4, by post type
+p <- ggplot(df, aes(x = likes_count, y = comments_count)) + xlab("Likes count") +
+  ylab("Comments count")
+p + geom_point() + scale_x_log10(labels = comma) + scale_y_log10(labels = comma) + 
+        facet_wrap(~post_type, nrow = 2) 
+
+
+# geom_text() allows to use party names instead of points
+p <- ggplot(df[df$likes_count>10000, ], 
+            aes(x = likes_count, y = comments_count, label = party)) +
+  xlab("Likes count") +
+  ylab("Comments count")
+p + geom_text() + scale_x_log10(labels = comma) + scale_y_log10(labels = comma)
+```
+
+Other examples:
+
+```{r}
+## Scatter plot with dots colored by type of post
+p <- ggplot(df[df$likes_count>5000, ], 
+            aes(x = likes_count, y = comments_count)) +
+  scale_x_log10("Likes count", labels = comma) +
+  scale_y_log10("Comments count", labels = comma)
+p + geom_point(aes(color = post_type))
+
+## Same for point shape
+p + geom_point(aes(shape = post_type))
+
+## Combining both (now different shapes also have different colors)
+p + geom_point(aes(shape = post_type, color = post_type))
+```
+
+### Dealing with cases where a lot of points are in some areas
+
+Jittering points can avoid "overplotting", however, can also easily be misleading:
+
+```{r}
+p <- ggplot(df, aes(x = party, y = comments_count)) + ylab("comments count")
+p + geom_point()
+
+# vs
+p + geom_jitter(position = position_jitter(width = .1, height=.1))
+```
+
+```{r}
+# Baseline
+p <- ggplot(df, aes(x = likes_count, y = comments_count)) +
+  scale_x_log10("Likes count", labels = comma) +
+  scale_y_log10("Comments count", labels = comma) 
+p + geom_point()
+
+## Points could also be jittered in scatter plots (yet, obscures the log values here and would be misleading)
+p + geom_jitter(position = position_jitter(width = .5, height =.5))
+
+## Transparency
+p + geom_jitter(position = position_jitter(width = .5, height = .5), alpha = 1/25)
+
+# Generally, plotting binned means (either over deciles or over fixed (log) intervals like here)
+# can help with plots that contain a lot of points/observations.
+# Furthermore, geom_rug() is another option to indicate where most mass is
+p <- ggplot(df, aes(x = likes_count, y = comments_count)) +
+  scale_x_log10("Likes count", labels = comma) +
+  scale_y_log10("Comments count", labels = comma) 
+p + geom_point() + geom_rug(color = "grey", alpha = 0.6) +
+   stat_summary_bin(fun = 'mean', bins = 20, color = 'green', size = 2, geom = 'point')
+```
+
+## Scales, axes and legends
+
+In this section, we focus on axes, legends, scales, facets, and polishing plots more generally.
+
+### Customizing axes
+
+```{r}
+# Changing axis titles
+p <- ggplot(data = df, mapping = aes(x = likes_count))
+p + geom_histogram() + scale_x_log10("Number of likes", labels = comma) +
+    scale_y_continuous("Post count", labels = comma)
+
+# Changing axis limits (continuous variables)
+p + geom_histogram() + scale_y_continuous("Post count") +
+  scale_x_log10("Number of likes", limits = c(1, 100000), labels = comma)
+    
+# Changing axis breaks and defining label for each break
+p <- ggplot(df, aes(x = likes_count)) + xlab("likes count")
+p + geom_histogram() + scale_x_log10(breaks = c(1, 10, 100, 1000))
+p + geom_histogram() + scale_x_log10(breaks = c(1, 10, 100, 1000, 10000),
+    labels=c(1, 10, 100, "1K", "10K"))
+
+# Changing axis breaks and labels (categorical variables)
+p <- ggplot(df, aes(x=party))
+p + geom_bar() + scale_x_discrete(labels=c("D", "I", "R"))
+
+# Creating data for time series plot of posts per day
+counts <- df |>
+  group_by(date) |> 
+  summarise(posts = n())
+
+# Basic line plot
+p <- ggplot(counts, aes(x = date, y = posts))
+p + geom_line()
+
+# Intervals of two months
+p + geom_line() + scale_x_date(date_breaks = "2 months")
+
+# Using the scales package to only depict year and month
+p + geom_line() + scale_x_date(date_breaks = "2 months", 
+    labels = date_format("%Y-%m"))
+```
+
+### Customizing scales and legends
+
+```{r}
+p <- ggplot(df, aes(x = likes_count)) + xlab("likes count")
+p + scale_x_log10(labels = comma) + geom_histogram(color = "red") # border of geoms
+p + scale_x_log10(labels = comma) + geom_histogram(fill = "red") # area of geoms
+
+p <- ggplot(df, aes(x = likes_count, y = comments_count)) +
+  scale_x_log10("likes count", labels = comma) +
+  scale_y_log10("comments count", labels = comma)
+
+p + geom_point(color = "red")
+p + geom_point(shape = 15)
+p + geom_point(size = 1)
+
+# for a complete list for each geom, type ?geom_point, ?geom_line, ...
+```
+
+Next, let us use colour within aesthetics and in combination with the post type. Rather than as a property of the geom, it now applies to specific groups (here post types) via scales instead of to all data points (when specified in geom before).
+
+```{r}
+p <- ggplot(df, aes(x = likes_count, y = comments_count)) +
+  scale_x_log10("Likes count", labels = comma) +
+  scale_y_log10("Comments count", labels = comma)
+p + geom_point(aes(color = post_type)) +
+    scale_color_manual("Post type",
+        limits = c("link", "status", "video", "photo"),
+        values = c("blue", "grey", "red", "yellow"))
+
+p + geom_point(aes(shape = post_type)) +
+    scale_shape_manual("Post type",
+        limits = c("link", "status", "video", "photo"),
+        values = c(1, 3, 4, 5)) # integers specify shapes
+```
+
+Finally, we can also modify the labels in the legend:
+
+```{r}
+p + geom_point(aes(shape = post_type)) +
+    scale_shape_manual("Post type",
+        limits = c("link", "status", "video", "photo"),
+        labels = c("Link", "Status", "Video", "Photo"),
+        values=c(1, 3, 4, 5))
+```
+
+### Facets
+
+Facets can e.g. be very helpful when we would like to repeat plots for different values of a categorical variable. Here we benefit from data in a tidy format where classes are stored in a distinct variable.
+
+```{r}
+p + geom_point() + facet_wrap(~post_type)
+
+p + geom_point() + facet_wrap(~post_type, nrow=4)
+
+p + geom_point() + facet_wrap(~post_type, ncol=4)
+```
+
+With two factor variables:
+
+```{r}
+p + geom_point() + facet_grid(gender~post_type)
+```
+
+Combining facets and scales:
+
+```{r}
+p <- ggplot(df[df$likes_count>5000,], 
+            aes(x = likes_count, y = comments_count)) +
+  scale_x_log10("Likes count", labels = comma) +
+  scale_y_log10("Comments count", labels = comma)
+p + geom_point(aes(shape = gender, color = post_type, size = shares_count)) +
+  scale_size(trans = "log10") + facet_wrap(~post_type, nrow = 2)  
+```
+
+### Changing themes
+
+```{r}
+p + geom_point() + theme_bw()
+
+p + geom_point() + theme_grey()
+
+p + geom_point() + theme_minimal()
+
+p + geom_point() + theme_classic()
+```
+
+All theme options can be edited manually using 'theme', e.g. removing axis ticks:
+
+```{r}
+p + geom_point() + theme( axis.ticks = element_blank() )
+```
+
+See `?theme` for all possible options. We will see more examples later.
+
+### Saving plots
+
+Different ways of doing this, easiest is with `ggsave`:
+
+```{r}
+pq <- p + geom_point() + facet_grid(party~gender)
+
+ggsave(pq, file="grid_plot.pdf", height=6, width=6)
+```
+
+### Multiple types of plots on a grid
+
+Now we will combine multiple plots on a grid. For this we use the `{gridExtra}` package which adds more functions.
+
+```{r}
+# Posts by type of post
+p1 <- ggplot(df, aes(x = post_type)) + geom_bar() + theme_minimal() +
+    scale_y_continuous("Number of posts") + 
+    scale_x_discrete("Type of post") +
+    theme (axis.ticks.x = element_blank())
+
+p2 <- ggplot(df, aes(x = gender)) + geom_bar() + theme_minimal() +
+     scale_x_discrete("Gender of legislator", 
+        labels=c("Female", "Male")) +   
+    theme (axis.title.y = element_blank(), axis.text.y = element_blank(),
+        axis.ticks = element_blank())
+
+# average number of likes by type of post
+p3 <- ggplot(df, aes(x = post_type, y = likes_count)) + 
+    stat_summary(fun = "mean", geom = "point", size = 5, shape = 15) +
+    theme_minimal() + scale_y_continuous("Average likes count") +
+    scale_x_discrete("Type of post") +
+    theme (axis.ticks.x = element_blank()) 
+
+# average number of likes by gender
+p4 <- ggplot(df, aes(x = gender, y = likes_count)) + 
+    stat_summary(fun = "mean", geom = "point", size = 5, shape = 15) +
+    theme_minimal() + scale_x_discrete("Gender of legislator", 
+        labels = c("Female", "Male")) +   
+    theme (axis.title.y = element_blank(), axis.text.y = element_blank(),
+        axis.ticks = element_blank())
+
+
+# dev.off() closes the file
+pdf("multiple_plots_grid.pdf", height = 6, width = 6)
+grid.arrange(arrangeGrob(p1, p2, p3, p4, ncol = 2, heights = c(0.6, 0.4)))
+dev.off()
+```

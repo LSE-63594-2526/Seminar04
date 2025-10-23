@@ -1,0 +1,280 @@
+---
+title: "Seminar 3.1: Live Births in London"
+subtitle: "LSE MY472: Data for Data Scientists"
+date-modified: "22 October 2025" 
+date-format: "D MMMM YYYY"
+toc: true
+format:
+  html:
+    embed-resources: true
+    toc: true
+    mathjax: true
+execute:
+  echo: true
+  eval: false
+---
+
+In this notebook, we will explore some panel data on the number of live births in London by the mother's country of birth. The data is maintained by government of London in in the London Datastore at <https://data.london.gov.uk/>. You can read more about this specific dataset at <https://data.london.gov.uk/dataset/births-by-mothers-country-of-birth-in-london>. Since this data has a spatial component, it will allow us to create some spatial visualisations.
+
+## Set up
+
+### Load (and install) required packages
+
+```{r}
+# install.packages("tidyverse") # if needed
+# install.packages("sf") # if needed
+library("tidyverse")
+library("sf")
+```
+
+### Directory management
+
+Indicate your working directory in the following code chunk, which should be the absolute path to the Seminar 4 repo cloned to your computer after you accepted the GitHub Classroom assignment. *Please review previous weeks' materials if you do not know what this means.*
+
+::: callout-important
+You should have given your local repo a different name when you cloned to your computer (as you did in last weeks' seminars). This means that you should have use the command line command `git clone XXXXX Seminar04` when you cloned Seminar 4 repo to your computer (replacing `XXXXX` with the URL to your GitHub Classroom repo for Seminar 4).
+:::
+
+```{r}
+## Use this code if you have a Unix-like operating system (macOS or Linux)
+wdir <- "~/LSE-MY472-AT25/Seminar04"
+## Use this code if you use Windows 
+# Sys.setenv(R_USER = "C:/Users/HUBERTR") # Windows: tell R my home folder (replace with your user name)
+# wdir <- file.path(Sys.getenv("R_USER"), "LSE-MY472-AT25", "Seminar04") # Windows: specify directory
+```
+
+::: callout-note
+The Windows code above works on Ryan's Windows PC. You should modify it as needed for your own device.
+:::
+
+### Getting datasets
+
+For this seminar, we will be downloading some datasets. Let's store them in a subdirectory of the working directory we specified above (i.e., your `Seminar04` repo). We will call the path to this subdirectory `ddir` for "data directory."
+
+```{r}
+ddir <- file.path(wdir, "data") # a "data" subdirectory
+print(ddir) # check this looks right
+
+# Check if the directory exists, and if not, create it
+# Note: if you cloned the GitHub Classroom repo correctly, it should already contain this directory
+if(!dir.exists(ddir)){
+  dir.create(ddir) 
+}
+```
+
+For this notebook, we need two datasets. First, the dataset on live births in London described above, which we can directly download the specific data we want at the following URL.
+
+```{r}
+births.url <- "https://data.london.gov.uk/download/0cbfb9ca-2ecd-4ad5-beae-b099c5e27dff/df2c2591-c8df-4446-82b5-d518a73def17/births_by_mothers_country_of_birth_2001_to_2024.csv"
+```
+
+For this dataset of live births, define the file path for the location you will save this download on your computer, and then download it.
+
+```{r}
+# Note: we use the file name used for the file stored in the website above
+births.file <- file.path(ddir, "births_by_mothers_country_of_birth_2001_to_2024.csv")
+# Download the file if you haven't already
+if(!file.exists(births.file)){ 
+  download.file(births.url, births.file)
+}
+```
+
+Second, we need geographic data so that we can make maps of the London boroughs. It is available at the URL below, which you should download and unzip using a similar process as above.
+
+```{r}
+geom.data <- "https://data.london.gov.uk/download/statistical-gis-boundary-files-london/9ba8c833-6370-4b11-abdc-314aa020d5e0/statistical-gis-boundaries-london.zip"
+geom.file <- file.path(ddir, "statistical-gis-boundaries-london.zip")
+if(!file.exists(geom.file)) {
+  download.file(geom.data, geom.file) 
+  unzip(geom.file, exdir = ddir)
+}
+```
+
+After you have unzipped the file you just downloaded using the chunk above, you should see a new folder inside your `ddir` directory. This will contain a whole bunch of files, but we specifically want the shapefile (file extension `.shp`) corresponding to the London boroughs. Ryan spent some time figuring out which file it was, and here's the path to the file.
+
+```{r}
+boro.file <- file.path(ddir, "statistical-gis-boundaries-london", "ESRI", "London_Borough_Excluding_MHW.shp")
+print(boro.file) # to see where it's located on your computer
+```
+
+The following code is a more "programmatic" (but way more complicated) way to find the file.
+
+```{r}
+#| eval: false
+boro.dir <- paste0(ddir,"/",str_extract(geom.data, "/([^/]+).zip$", group=1),"/ESRI") 
+boro.file <- list.files(boro.dir)
+boro.file <- paste0(boro.dir,"/",boro.file[str_detect(boro.file,"Borough") & str_detect(boro.file,".shp$")])
+```
+
+At this point, you should be ready to use these two datasets, which are located on your computer at the paths stored as `births.file` and `boro.file`, respectively. In the next sections, we will work with these datasets, but first check that they exist:
+
+```{r}
+if(file.exists(births.file) & file.exists(births.file)){
+  print("Both files exist at the specified paths, you may continue!")
+} else {
+  # This will raise an error because files can't be found
+  stop("Unable to find one or both of the required data files!")
+}
+```
+
+## Live birth data
+
+Load the data and look at its structure and some patterns. Notice that this dataset appears to be organised at the year-geography level---i.e., the "primary key" is a combination of the `gss_code` and `year` variables.
+
+```{r}
+bf <- read_csv(births.file)
+colnames(bf)
+head(bf)
+```
+
+Using data wrangling techniques you learned last week, you can calculate the number of births across all London boroughs in each year. Then you can visualise it using a bar chart as follows.
+
+```{r}
+bf |>
+  filter(type=="London Borough") |> # only look at boroughs
+  group_by(year) |> # group by years
+  summarise(total_births_london = sum(total_births_all)) |> # total per year
+  ggplot(aes(x=year,y=total_births_london)) + 
+  geom_col()
+```
+
+You can also break up this data into two categories: whether mother was UK born or not. You can display this in multiple ways, but one way is to add colouring to the bars in the histogram as follows.
+
+```{r}
+# make new dataset for plotting
+bf1 <- bf |>
+  filter(type=="London Borough") |> 
+  group_by(year) |>
+  summarise(uk_mothers = sum(total_births_uk_mothers), nonuk_mothers = sum(total_births_overseas_mothers)) |>
+  pivot_longer(cols=c(uk_mothers, nonuk_mothers))
+
+# Plot
+bf1 |>
+  ggplot(aes(x=year,y=value,fill=name)) + 
+  geom_col() 
+```
+
+Healy (2019, section 1.2.3 available [here](https://socviz.co/lookatdata.html#what-makes-bad-figures-bad)) points out that colouring histograms in this way might not be the best way to convey information. But here, it seems okay.
+
+We have used default settings in the visualisations above. This is not ideal. For a professional report (or a final exam), you would typically adjust many settings to make these visualisations look as neat and clear as possible. For example, notice that the legend is quite unclear: what is "name"? and the text next to each colour should be real, properly formatted text. Let's do a bit of clean up.
+
+```{r}
+# Clean up discrete variables for neater plotting
+bf1 <- bf1 |> 
+  mutate(name = if_else(str_detect(name, "^uk_m"), "British", "Non-British")) |>
+  mutate(name = factor(name), year = factor(year))
+
+# Clean up plot with nicer labels, colours, etc.
+bf1 |> ggplot(aes(x=year, y=value, fill=name)) + 
+  geom_col() + 
+  scale_x_discrete(name = "Year") + 
+  scale_y_continuous(name = "Live Births", 
+                     labels = scales::label_comma(), 
+                     breaks = seq(0, 150000, 10000)) + 
+  scale_fill_brewer("Mother's\nNationality", palette = "Dark2") +     
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+You can also depict this using a line graph as follows.
+
+```{r}
+bf1 |>
+  ggplot(aes(x=year, y=value, group=name, colour=name)) + 
+  geom_point() + 
+  geom_line() + 
+  scale_x_discrete(name = "Year") + 
+  scale_y_continuous(name = "Live Births", 
+                     labels = scales::label_comma(), 
+                     limits = c(0, 80000),
+                     breaks = seq(0, 80000, 10000)) + 
+  scale_colour_brewer("Mother's\nNationality", palette = "Dark2") +     
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+## Plotting live births data on the borough map
+
+Now, let's create some visualisations of the London births data by borough. First, let's read the London borough shapefile into the R working environment using the `read_sf()` function from `{sf}`. We'll assign it the name `gf`.
+
+```{r}
+gf <- read_sf(boro.file)
+head(gf) # check it is spatial data!
+```
+
+Next, we need to merge together our births data with our geometry data. Here we use the `inner_join()` function you saw last week.
+
+```{r}
+df <- gf |> 
+  inner_join(bf, by = c("GSS_CODE" = "gss_code"))
+```
+
+Next, let's see where the most births were in 2001 and compare it to 2024.
+
+```{r}
+df |> 
+  filter(year %in% c(2001,2024)) |> # notice we subset the data
+  ggplot() + 
+  geom_sf(aes(fill = total_births_all), 
+          color = "black", linewidth = 1) + 
+  labs(title="Total live births in London", subtitle = "2001 versus 2024") + 
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"), 
+        plot.subtitle = element_text(hjust = 0.5, size = 12, face = "bold")) + 
+  facet_grid(cols = vars(year))
+```
+
+This shading is odd---usually one would expect higher numbers to be darker shading. Let's customise the colour scale by reversing this shading and choosing a different colour scheme (see <https://bookdown.org/hneth/ds4psy/D.3-apx-colors-basics.html>). While we are at it, let's make the legend look nicer.
+
+```{r}
+df |> 
+  filter(year %in% c(2001,2024)) |> 
+  ggplot() + 
+  geom_sf(aes(fill = total_births_all, geometry = geometry), 
+          color = "black", linewidth = 1) + 
+  scale_fill_gradient("Total Live Births", 
+                      low = "white", high = "magenta4", 
+                      labels = scales::label_comma()) + 
+  labs(title="Total live births in London", subtitle = "2001 versus 2024") + 
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"), 
+        plot.subtitle = element_text(hjust = 0.5, size = 12, face = "bold")) + 
+  facet_grid(cols = vars(year))
+```
+
+Finally, let's look at how the proportion of of births by non-UK-born mothers has changed from 2001 to 2024. London has become more international!
+
+```{r}
+## Let's create a variables for proportion of uk mothers
+df <- df |> 
+  mutate(prop_nonuk_mothers = total_births_overseas_mothers/total_births_all)
+
+my.plot <- df |> 
+  filter(year %in% c(2001,2024)) |> 
+  ggplot() + 
+  geom_sf(aes(fill = prop_nonuk_mothers, geometry = geometry), 
+          color = "black", linewidth = 1) + 
+  scale_fill_gradient("Proportion of\nNon-UK Mothers", 
+                      low = "white", high = "darkgreen", # use different colour
+                      labels = scales::label_percent()) + 
+  labs(title="Proportion of Births to Non-UK-Born Mothers", 
+       subtitle = "2001 versus 2024") +  
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"), 
+        plot.subtitle = element_text(hjust = 0.5, size = 12, face = "bold"), 
+        strip.text = element_text(size = 14)) + # increase size of year labels
+  facet_grid(cols = vars(year))
+print(my.plot)
+```
+
+Now, save the plot.
+
+```{r}
+ggsave(filename = "Births2001vs2024.png",
+       path = wdir, 
+       plot = my.plot,
+       width = 20, 
+       units = "cm", 
+       dpi = 300,
+       bg = "white")
+```
